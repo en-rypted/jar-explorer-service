@@ -1,0 +1,9 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="JarExplorerService:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/JarExplorerService_jar</output-path>
+    <root id="archive" name="JarExplorerService.jar">
+      <element id="module-output" name="JarExplorerService" />
+      <element id="extracted-dir" path="$USER_HOME$/Downloads/gson-2.13.1.jar" path-in-jar="/" />
+    </root>
+  </artifact>
+</component>
