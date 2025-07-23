@@ -1,6 +1,7 @@
 import com.google.gson.Gson;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -48,15 +49,24 @@ public class Main {
                 while(entry.hasMoreElements()){
                     JarEntry jarEntry = entry.nextElement();
                     String[] str = jarEntry.getName().split("\\.");
-                    if(jarFileTypes.contains("."+str[str.length-1].toLowerCase()) && jarEntry.getName().equals(classPath)) {
+                    if(jarEntry.getName().equals(classPath)) {
                         File classFile = new File(outputDir, jarEntry.getName());
+                        boolean classFileFlag = jarEntry.getName().endsWith(".class");
                         classFile.getParentFile().mkdirs();
                         try (InputStream is = jarFile.getInputStream(jarEntry);
                              FileOutputStream fos = new FileOutputStream(classFile);
                         ) {
+                            if(!classFileFlag){
+                                byte[] fileByes = is.readAllBytes();
+                                System.out.println(Base64.getUrlEncoder().encodeToString(fileByes));
+                                deleteTempDirectory(tempDir);
+                                return;
+                            }
                             is.transferTo(fos);
+
                         }
-                        boolean classFileFlag = jarEntry.getName().endsWith(".class");
+
+
                         // Build the CFR command to decompile the class file
 
                         ProcessBuilder pb = new ProcessBuilder(
@@ -65,16 +75,13 @@ public class Main {
                         );
                         Process process = null;
                         pb.redirectErrorStream(true);
-                        if(classFileFlag){
-                            process = pb.start();
-                        }
+                        process = pb.start();
 
-                        StringBuffer content = new StringBuffer("");
+                        StringBuilder content = new StringBuilder();
                         // Read and print any output (optional)
                         try {
                             BufferedReader reader = null;
-                             reader = classFileFlag  ? new BufferedReader(
-                                     new InputStreamReader(process.getInputStream())) : new BufferedReader(new FileReader(classFile)) ;
+                             reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
                             String line;
                             while ((line = reader.readLine()) != null) {
                                 if (line.trim().startsWith("/*") || line.trim().startsWith("*") || line.trim().startsWith("*/")) {
@@ -82,11 +89,12 @@ public class Main {
                                 }
                                 content.append(line).append("\n");
                             }
+
                         } catch (Exception e){
                             throw e;
                         }
 
-                        int exitCode =classFileFlag ? process.waitFor() : 0 ;
+                        int exitCode = process.waitFor();
                         if (exitCode == 0) {
                             System.out.println(Base64.getUrlEncoder().encodeToString(content.toString().getBytes()));
 
@@ -98,7 +106,7 @@ public class Main {
                 deleteTempDirectory(tempDir);
             }else if(option.equals("JarView")){
 
-               List< Map<String,String> > entries = new ArrayList<>();
+               List< Map<String,String>> entries = new ArrayList<>();
                while (entry.hasMoreElements()){
                    JarEntry jarEntry = entry.nextElement();
                    Map<String,String> mapEntry = new HashMap<>();
@@ -109,6 +117,30 @@ public class Main {
 
                 System.out.println(gson.toJson(entries));
 
+            }else if(option.equals("InnerJar")){
+                String classPath =args[2];
+                Path tempInnerDir = Files.createTempDirectory("cfr_innerFiles_");
+                String innerOutputDir = tempInnerDir.toAbsolutePath().toString();
+                while (entry.hasMoreElements()){
+                    JarEntry jarEntry = entry.nextElement();
+                    if(jarEntry.getName().equals(classPath)) {
+                        File packFile = new File(innerOutputDir, jarEntry.getName());
+                        packFile.getParentFile().mkdirs();
+                        try (InputStream is = jarFile.getInputStream(jarEntry);
+                             FileOutputStream fos = new FileOutputStream(packFile);
+                        ) {
+                            is.transferTo(fos);
+                        }
+                        try(JarFile innerJar = new JarFile(packFile)){
+                            Enumeration<JarEntry> innerJarEntries = innerJar.entries();
+                            List<Map<String,String>> fileList = getFileList(innerJarEntries);
+                            Map<String,Object> res = new HashMap<>();
+                            res.put("absolutePath",packFile.getAbsolutePath());
+                            res.put("fileList",fileList);
+                            System.out.println(gson.toJson(res));
+                        }
+                    }
+                }
             }
 
         } catch (IOException e) {
@@ -131,5 +163,17 @@ public class Main {
                         }
                     });
         }
+    }
+
+    public static List<Map<String,String>> getFileList( Enumeration<JarEntry> entry){
+        List< Map<String,String>> entries = new ArrayList<>();
+        while (entry.hasMoreElements()){
+            JarEntry jarEntry = entry.nextElement();
+            Map<String,String> mapEntry = new HashMap<>();
+            mapEntry.put("name",jarEntry.getName());
+            mapEntry.put("type",jarEntry.isDirectory()?"directory":"file");
+            entries.add(mapEntry);
+        }
+        return entries;
     }
 }
